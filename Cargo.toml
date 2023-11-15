@@ -8,6 +8,9 @@ edition = "2021"
 [dependencies]
 clap = { version = "2.33.1" }
 crossbeam-channel = { version = "0.5.8" }
+dioxus = { version = "0.4.0" }
+dioxus-desktop = { version = "0.4.0" }
+dioxus-tui = { version = "0.4.0" }
 log = { version = "0.4.20" }
 serde = { version = "1.0.192", features = ["derive"] }
 serde_json = { version = "1.0.108" }

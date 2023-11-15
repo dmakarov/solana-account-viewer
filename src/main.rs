@@ -1,6 +1,13 @@
+// todo remove deprecated
+#![allow(non_snake_case, deprecated)]
+
 use {
-    clap::{crate_description, crate_name, value_t, value_t_or_exit, values_t_or_exit, App, Arg, ArgMatches},
+    clap::{crate_description, crate_name, value_t, value_t_or_exit, values_t_or_exit, Arg, ArgMatches},
+    // import the prelude to get access to the `rsx!` macro and the `Scope` and `Element` types
+    dioxus::{events::{KeyCode, KeyboardEvent}, prelude::*},
+    //dioxus_tui::TuiContext,
     log::*,
+    //serde::{Deserialize, Serialize},
     solana_account_decoder::{UiAccount, UiAccountData, UiAccountEncoding},
     solana_accounts_db::{
         accounts::Accounts,
@@ -32,15 +39,91 @@ use {
         clock::Slot, genesis_config::GenesisConfig, native_token::lamports_to_sol, pubkey::Pubkey, signature::Signer, signer::keypair::Keypair, timing::timestamp,
     },
     solana_streamer::socket::SocketAddrSpace,
-    std::{fs, path::{Path, PathBuf}, process::exit, sync::{atomic::{AtomicBool, Ordering}, Arc, RwLock}},
+    std::{collections::BTreeMap, fs, path::{Path, PathBuf}, process::exit, sync::{atomic::{AtomicBool, Ordering}, Arc, RwLock}},
 };
 
 const LEDGER_TOOL_DIRECTORY: &str = "ledger_tool";
 
 fn main() {
+    dioxus_desktop::launch(App);
+    /*
+    // launch the app in the terminal
+    dioxus_desktop::launch_cfg(
+        App,
+        dioxus_desktop::Config::new()
+            .without_ctrl_c_quit()
+            // Some older terminals only support 16 colors or ANSI colors
+            // If your terminal is one of these, change this to BaseColors or ANSI
+            .with_rendering_mode(dioxus_tui::RenderingMode::Rgb),
+    );
+    */
+}
+
+/// create a component that renders the top-level UI layout
+fn App(cx: Scope) -> Element {
+    //use_shared_state_provider(cx, || PreviewState::Unset);
+    //let tui_ctx: TuiContext = cx.consume_context().unwrap();
+
+    cx.render(rsx! {
+        div {
+            display: "flex",
+            flex_direction: "row",
+            width: "100%",
+            // height: "10px",
+            // background_color: "red",
+            // justify_content: "center",
+            // align_items: "center",
+            onkeydown: move |k: KeyboardEvent| if let KeyCode::Q = k.key_code {
+                //tui_ctx.quit();
+            },
+            div {
+                display: "flex",
+                flex_direction: "column",
+                padding: "10px",
+                Accounts {}
+            }
+            div {
+                display: "flex",
+                flex_direction: "column",
+                width: "100%",
+                background: "red",
+                AccountItem {}
+            }
+        }
+    })
+}
+
+fn Accounts(cx: Scope) -> Element {
+    let accounts = get_accounts();
+
+    render! {
+        div {
+            for account in accounts.keys() {
+                AccountListing { account: account.clone() }
+            }
+        }
+    }
+}
+
+fn AccountItem(cx: Scope) -> Element {
+    render! { "account" }
+}
+
+#[inline_props]
+fn AccountListing(cx: Scope, account: String) -> Element {
+    cx.render(rsx! {
+        div {
+            position: "relative",
+            font_family: "Menlo",
+            "{account}"
+        }
+    })
+}
+
+fn get_accounts() -> BTreeMap<String, Vec<String>> {
     solana_logger::setup_with_default("solana=info");
 
-    let matches = App::new(crate_name!())
+    let matches = clap::App::new(crate_name!())
         .about(crate_description!())
         .version(solana_version::version!())
         .arg(
@@ -209,18 +292,6 @@ fn main() {
                 .takes_value(false)
                 .help("Include sysvars too"),
         )
-        .arg(
-            Arg::with_name("no_account_contents")
-                .long("no-account-contents")
-                .takes_value(false)
-                .help("Do not print contents of each account, which is very slow with lots of accounts."),
-        )
-        .arg(
-            Arg::with_name("no_account_data")
-                .long("no-account-data")
-                .takes_value(false)
-                .help("Do not print account data when printing account contents."),
-        )
         .get_matches();
 
     info!("{} {}", crate_name!(), solana_version::version!());
@@ -263,28 +334,32 @@ fn main() {
     let bank = bank_forks.read().unwrap().working_bank();
     let mut total_accounts_stats = TotalAccountsStats::default();
     let rent_collector = bank.rent_collector();
-    let print_account_contents = !matches.is_present("no_account_contents");
-    let print_account_data = !matches.is_present("no_account_data");
     let data_encoding = match matches.value_of("encoding") {
         Some("jsonParsed") => UiAccountEncoding::JsonParsed,
         Some("base64") => UiAccountEncoding::Base64,
         Some("base64+zstd") => UiAccountEncoding::Base64Zstd,
         _ => UiAccountEncoding::Base64,
     };
+    let mut owners: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let scan_func = |some_account_tuple: Option<(&Pubkey, AccountSharedData, Slot)>| {
         if let Some((pubkey, account, slot)) = some_account_tuple
             .filter(|(_, account, _)| Accounts::is_loadable(account.lamports()))
         {
             if include_sysvars || !solana_sdk::sysvar::is_sysvar_id(pubkey) {
                 total_accounts_stats.accumulate_account(pubkey, &account, rent_collector);
-                if print_account_contents {
-                    output_account(pubkey, &account, Some(slot), print_account_data, data_encoding);
+                let key = account.owner().to_string();
+                if let Some(accounts) = owners.get_mut(&key) {
+                    accounts.push(pubkey.to_string());
+                } else {
+                    owners.insert(key, vec![pubkey.to_string()]);
                 }
+                output_account(pubkey, &account, Some(slot), false, data_encoding);
             }
         }
     };
     bank.scan_all_accounts(scan_func).unwrap();
     println!("\n{total_accounts_stats:#?}");
+    owners
 }
 
 // Build an `AccountsDbConfig` from subcommand arguments. All of the arguments
@@ -310,12 +385,8 @@ fn get_accounts_db_config(ledger_path: &Path, arg_matches: &ArgMatches<'_>,) -> 
         } else {
             TestPartitionedEpochRewards::None
         };
-
     let accounts_index_drives: Vec<PathBuf> = if arg_matches.is_present("accounts_index_path") {
-        values_t_or_exit!(arg_matches, "accounts_index_path", String)
-            .into_iter()
-            .map(PathBuf::from)
-            .collect()
+        values_t_or_exit!(arg_matches, "accounts_index_path", String).into_iter().map(PathBuf::from).collect()
     } else {
         vec![ledger_tool_ledger_path.join("accounts_index")]
     };
@@ -325,18 +396,14 @@ fn get_accounts_db_config(ledger_path: &Path, arg_matches: &ArgMatches<'_>,) -> 
         drives: Some(accounts_index_drives),
         ..AccountsIndexConfig::default()
     };
-
     let filler_accounts_config = FillerAccountsConfig {
         count: value_t!(arg_matches, "accounts_filler_count", usize).unwrap_or(0),
         size: value_t!(arg_matches, "accounts_filler_size", usize).unwrap_or(0),
     };
-
     let accounts_hash_cache_path = arg_matches
         .value_of("accounts_hash_cache_path")
         .map(Into::into)
-        .unwrap_or_else(|| {
-            ledger_tool_ledger_path.join(AccountsDb::DEFAULT_ACCOUNTS_HASH_CACHE_DIR)
-        });
+        .unwrap_or_else(|| ledger_tool_ledger_path.join(AccountsDb::DEFAULT_ACCOUNTS_HASH_CACHE_DIR));
     let accounts_hash_cache_path =
         snapshot_utils::create_and_canonicalize_directories(&[accounts_hash_cache_path])
             .unwrap_or_else(|err| {
@@ -345,19 +412,16 @@ fn get_accounts_db_config(ledger_path: &Path, arg_matches: &ArgMatches<'_>,) -> 
             })
             .pop()
             .unwrap();
-
     AccountsDbConfig {
         index: Some(accounts_index_config),
         base_working_path: Some(ledger_tool_ledger_path),
         accounts_hash_cache_path: Some(accounts_hash_cache_path),
         filler_accounts_config,
-        ancient_append_vec_offset: value_t!(arg_matches, "accounts_db_ancient_append_vecs", i64)
-            .ok(),
+        ancient_append_vec_offset: value_t!(arg_matches, "accounts_db_ancient_append_vecs", i64).ok(),
         exhaustively_verify_refcounts: arg_matches.is_present("accounts_db_verify_refcounts"),
         skip_initial_hash_calc: arg_matches.is_present("accounts_db_skip_initial_hash_calculation"),
         test_partitioned_epoch_rewards,
-        test_skip_rewrites_but_include_in_bank_hash: arg_matches
-            .is_present("accounts_db_test_skip_rewrites"),
+        test_skip_rewrites_but_include_in_bank_hash: arg_matches.is_present("accounts_db_test_skip_rewrites"),
         ..AccountsDbConfig::default()
     }
 }
@@ -373,10 +437,7 @@ fn load_and_process_ledger(
     let bank_snapshots_dir = if blockstore.is_primary_access() {
         blockstore.ledger_path().join("snapshot")
     } else {
-        blockstore
-            .ledger_path()
-            .join(LEDGER_TOOL_DIRECTORY)
-            .join("snapshot")
+        blockstore.ledger_path().join(LEDGER_TOOL_DIRECTORY).join("snapshot")
     };
 
     let mut starting_slot = 0; // default start check with genesis
@@ -652,10 +713,7 @@ fn open_blockstore(
                 wal_recovery_mode,
             )
             .unwrap_or_else(|err| {
-                eprintln!(
-                    "Failed to open blockstore (with --force-update-to-open) at {:?}: {:?}",
-                    ledger_path, err
-                );
+                eprintln!("Failed to open blockstore (with --force-update-to-open) at {:?}: {:?}", ledger_path, err);
                 exit(1);
             })
         }
@@ -689,10 +747,7 @@ fn open_blockstore_with_temporary_primary_access(
         )?;
     }
     // Now, attempt to open the blockstore with original AccessType
-    info!(
-        "Blockstore forced open succeeded, retrying with original access: {:?}",
-        original_access_type
-    );
+    info!("Blockstore forced open succeeded, retrying with original access: {original_access_type:?}");
     Blockstore::open_with_options(
         ledger_path,
         BlockstoreOptions {
@@ -711,30 +766,25 @@ fn output_account(
     print_account_data: bool,
     encoding: UiAccountEncoding,
 ) {
-    println!("{pubkey}:");
-    println!("  balance: {} SOL", lamports_to_sol(account.lamports()));
-    println!("  owner: '{}'", account.owner());
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    println!("{:>6} {pubkey}:", COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+    println!("  balance:    {} SOL", lamports_to_sol(account.lamports()));
+    println!("  owner:      '{}'", account.owner());
     println!("  executable: {}", account.executable());
     if let Some(slot) = modified_slot {
-        println!("  slot: {slot}");
+        println!("  slot:       {slot}");
     }
     println!("  rent_epoch: {}", account.rent_epoch());
-    println!("  data_len: {}", account.data().len());
+    println!("  data_len:   {}", account.data().len());
     if print_account_data {
         let account_data = UiAccount::encode(pubkey, account, encoding, None, None).data;
         match account_data {
             UiAccountData::Binary(data, data_encoding) => {
                 println!("  data: '{data}'");
-                println!(
-                    "  encoding: {}",
-                    serde_json::to_string(&data_encoding).unwrap()
-                );
+                println!("  encoding: {}", serde_json::to_string(&data_encoding).unwrap());
             }
             UiAccountData::Json(account_data) => {
-                println!(
-                    "  data: '{}'",
-                    serde_json::to_string(&account_data).unwrap()
-                );
+                println!("  data: '{}'", serde_json::to_string(&account_data).unwrap());
                 println!("  encoding: \"jsonParsed\"");
             }
             UiAccountData::LegacyBinary(_) => {}
