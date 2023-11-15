@@ -1,0 +1,46 @@
+[package]
+name = "solana-account-viewer"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = { version = "2.33.1" }
+crossbeam-channel = { version = "0.5.8" }
+log = { version = "0.4.20" }
+serde = { version = "1.0.192", features = ["derive"] }
+serde_json = { version = "1.0.108" }
+solana-account-decoder = { git = "https://github.com/solana-labs/solana.git", version = "=1.18.0" }
+solana-accounts-db = { git = "https://github.com/solana-labs/solana.git", version = "=1.18.0" }
+solana-clap-utils = { git = "https://github.com/solana-labs/solana.git", version = "=1.18.0" }
+solana-core = { git = "https://github.com/solana-labs/solana.git", version = "=1.18.0" }
+solana-gossip = { git = "https://github.com/solana-labs/solana.git", version = "=1.18.0" }
+solana-ledger = { git = "https://github.com/solana-labs/solana.git", version = "=1.18.0" }
+solana-logger = { git = "https://github.com/solana-labs/solana.git", version = "=1.18.0" }
+solana-runtime = { git = "https://github.com/solana-labs/solana.git", version = "=1.18.0", features = ["dev-context-only-utils"] }
+solana-sdk = { git = "https://github.com/solana-labs/solana.git", version = "=1.18.0" }
+solana-streamer = { git = "https://github.com/solana-labs/solana.git", version = "=1.18.0" }
+solana-version = { git = "https://github.com/solana-labs/solana.git", version = "=1.18.0" }
+
+[patch.crates-io]
+# We include the following crates as our dependencies above from crates.io:
+#
+#  * spl-associated-token-account
+#  * spl-instruction-padding
+#  * spl-memo
+#  * spl-token
+#  * spl-token-2022
+#
+# They, in turn, depend on a number of crates that we also include directly using `path`
+# specifications.  For example, `spl-token` depends on `solana-program`.  And we explicitly specify
+# `solana-program` above as a local path dependency:
+#
+#     solana-program = { path = "../../sdk/program", version = "=1.16.0" }
+#
+# Unfortunately, Cargo will try to resolve the `spl-token` `solana-program` dependency only using
+# what is available on crates.io.  Crates.io normally contains a previous version of these crates,
+# and we end up with two versions of `solana-program` and `solana-zk-token-sdk` and all of their
+# dependencies in our build tree.
+solana-program = { git = "https://github.com/solana-labs/solana.git", version = "=1.18.0" }
+solana-zk-token-sdk = { git = "https://github.com/solana-labs/solana.git", version = "=1.18.0" }
