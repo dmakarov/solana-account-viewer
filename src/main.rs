@@ -39,7 +39,7 @@ use {
         clock::Slot, genesis_config::GenesisConfig, native_token::lamports_to_sol, pubkey::Pubkey, signature::Signer, signer::keypair::Keypair, timing::timestamp,
     },
     solana_streamer::socket::SocketAddrSpace,
-    std::{collections::BTreeMap, fs, path::{Path, PathBuf}, process::exit, sync::{atomic::{AtomicBool, Ordering}, Arc, RwLock}},
+    std::{collections::{BTreeMap, BTreeSet}, fs, path::{Path, PathBuf}, process::exit, sync::{atomic::{AtomicBool, Ordering}, Arc, RwLock}},
 };
 
 const LEDGER_TOOL_DIRECTORY: &str = "ledger_tool";
@@ -114,7 +114,7 @@ fn AccountListing(cx: Scope, account: String) -> Element {
     cx.render(rsx! {
         div {
             position: "relative",
-            font_family: "Menlo",
+            font_family: "Courier",
             "{account}"
         }
     })
@@ -341,6 +341,7 @@ fn get_accounts() -> BTreeMap<String, Vec<String>> {
         _ => UiAccountEncoding::Base64,
     };
     let mut owners: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut account_set: BTreeSet<String> = BTreeSet::new();
     let scan_func = |some_account_tuple: Option<(&Pubkey, AccountSharedData, Slot)>| {
         if let Some((pubkey, account, slot)) = some_account_tuple
             .filter(|(_, account, _)| Accounts::is_loadable(account.lamports()))
@@ -348,10 +349,12 @@ fn get_accounts() -> BTreeMap<String, Vec<String>> {
             if include_sysvars || !solana_sdk::sysvar::is_sysvar_id(pubkey) {
                 total_accounts_stats.accumulate_account(pubkey, &account, rent_collector);
                 let key = account.owner().to_string();
+                let account_key = pubkey.to_string();
+                account_set.insert(account_key.clone());
                 if let Some(accounts) = owners.get_mut(&key) {
-                    accounts.push(pubkey.to_string());
+                    accounts.push(account_key);
                 } else {
-                    owners.insert(key, vec![pubkey.to_string()]);
+                    owners.insert(key, vec![account_key]);
                 }
                 output_account(pubkey, &account, Some(slot), false, data_encoding);
             }
@@ -359,7 +362,7 @@ fn get_accounts() -> BTreeMap<String, Vec<String>> {
     };
     bank.scan_all_accounts(scan_func).unwrap();
     println!("\n{total_accounts_stats:#?}");
-    owners
+    owners.into_iter().filter(|(k, _)| !account_set.contains(k)).collect()
 }
 
 // Build an `AccountsDbConfig` from subcommand arguments. All of the arguments
