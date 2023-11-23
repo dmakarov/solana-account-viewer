@@ -440,7 +440,8 @@ fn get_accounts() -> BTreeMap<String, Vec<(String, AccountSharedData)>> {
     };
     bank.scan_all_accounts(scan_func).unwrap();
     println!("\n{total_accounts_stats:#?}");
-    owners.into_iter().filter(|(k, _)| !account_set.contains(k)).collect()
+    println!("Total owners {}", owners.keys().len());
+    owners // .into_iter().filter(|(k, _)| !account_set.contains(k)).collect()
 }
 
 // Build an `AccountsDbConfig` from subcommand arguments. All of the arguments
