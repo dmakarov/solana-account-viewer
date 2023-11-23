@@ -59,17 +59,20 @@ fn main() {
     */
 }
 
-struct AccountSet(Vec<String>);
+struct AccountSet{
+    pub owned: Vec<(String, AccountSharedData)>,
+    pub view: Option<String>,
+}
 
 /// create a component that renders the top-level UI layout
 fn App(cx: Scope) -> Element {
-    use_shared_state_provider(cx, || AccountSet(vec![]));
+    use_shared_state_provider(cx, || AccountSet{owned: vec![], view: None});
     //let tui_ctx: TuiContext = cx.consume_context().unwrap();
 
     cx.render(rsx! {
         div {
             display: "flex",
-            flex_direction: "row",
+            flex_direction: "column",
             width: "100%",
             // height: "10px",
             // background_color: "red",
@@ -80,16 +83,25 @@ fn App(cx: Scope) -> Element {
             },
             div {
                 display: "flex",
-                flex_direction: "column",
-                padding: "10px",
-                Accounts {}
-            }
+                flex_direction: "row",
+                height: "80%",
+                div {
+                    display: "flex",
+                    flex_direction: "column",
+                    padding: "10px",
+                    Accounts {}
+                },
+                div {
+                    display: "flex",
+                    flex_direction: "column",
+                    width: "100%",
+                    background: "#ffffdd",
+                    AccountItem {}
+                }
+            },
             div {
-                display: "flex",
-                flex_direction: "column",
-                width: "100%",
-                background: "#ffffdd",
-                AccountItem {}
+                height: "20%",
+                AccountView {}
             }
         }
     })
@@ -100,39 +112,93 @@ fn Accounts(cx: Scope) -> Element {
     render! {
         div {
             for account in accounts.keys() {
-                AccountListing { account: account.clone(), owned: accounts.get(account).unwrap().clone() }
+                RootAccountListing { account: account.clone(), owned: accounts.get(account).unwrap().clone() }
             }
         }
     }
 }
 
 fn AccountItem(cx: Scope) -> Element {
-    let account_set = &use_shared_state::<AccountSet>(cx).unwrap().read().0;
+    let account_set = &use_shared_state::<AccountSet>(cx).unwrap().read().owned;
     render! {
         div {
             for account in account_set {
-                AccountListing { account: account.clone(), owned: vec![] }
+                AccountListing { account: account.0.clone() }
             }
         }
     }
 }
 
 #[inline_props]
-fn AccountListing(cx: Scope, account: String, owned: Vec<String>) -> Element {
+fn RootAccountListing(cx: Scope, account: String, owned: Vec<(String, AccountSharedData)>) -> Element {
     let account_set = use_shared_state::<AccountSet>(cx).unwrap();
     cx.render(rsx! {
         div {
             position: "relative",
             font_family: "Courier",
             onmouseenter: move |_event| {
-                    account_set.write().0 = owned.clone();
+                    account_set.write().owned = owned.clone();
             },
             "{account}"
         }
     })
 }
 
-fn get_accounts() -> BTreeMap<String, Vec<String>> {
+#[inline_props]
+fn AccountListing(cx: Scope, account: String) -> Element {
+    let account_set = use_shared_state::<AccountSet>(cx).unwrap();
+    cx.render(rsx! {
+        div {
+            position: "relative",
+            font_family: "Courier",
+            onmouseenter: move |_event| {
+                    account_set.write().view = Some(account.clone());
+            },
+            "{account}"
+        }
+    })
+}
+
+fn AccountView(cx: Scope) -> Element {
+    let account_set = use_shared_state::<AccountSet>(cx).unwrap();
+    if let Some(view) = &account_set.read().view {
+        let owned = &account_set.read().owned;
+        if let Some(viewed) = owned.iter().find(|p| p.0 == *view) {
+            let balance = viewed.1.lamports();
+            let exec = viewed.1.executable();
+            let epoch = viewed.1.rent_epoch();
+            let data = viewed.1.data();
+            let len = data.len();
+            render! {
+                div {
+                    display: "flex",
+                    flex_direction: "column",
+                    div {
+                        "balance: {balance}"
+                    },
+                    div {
+                        "executable: {exec}"
+                    },
+                    div {
+                        "rent_epoch: {epoch}"
+                    },
+                    div {
+                        "data length: {len}"
+                    },
+                    div {
+                        "data: {data:?}"
+                    }
+                }
+            }
+        } else {
+            render! {""}
+        }
+    } else {
+        render! {""}
+    }
+}
+
+fn get_accounts() -> BTreeMap<String, Vec<(String, AccountSharedData)>> {
     solana_logger::setup_with_default("solana=info");
 
     let matches = clap::App::new(crate_name!())
@@ -352,7 +418,7 @@ fn get_accounts() -> BTreeMap<String, Vec<String>> {
         Some("base64+zstd") => UiAccountEncoding::Base64Zstd,
         _ => UiAccountEncoding::Base64,
     };
-    let mut owners: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut owners: BTreeMap<String, Vec<(String, AccountSharedData)>> = BTreeMap::new();
     let mut account_set: BTreeSet<String> = BTreeSet::new();
     let scan_func = |some_account_tuple: Option<(&Pubkey, AccountSharedData, Slot)>| {
         if let Some((pubkey, account, slot)) = some_account_tuple
@@ -364,9 +430,9 @@ fn get_accounts() -> BTreeMap<String, Vec<String>> {
                 let account_key = pubkey.to_string();
                 account_set.insert(account_key.clone());
                 if let Some(accounts) = owners.get_mut(&key) {
-                    accounts.push(account_key);
+                    accounts.push((account_key, account.clone()));
                 } else {
-                    owners.insert(key, vec![account_key]);
+                    owners.insert(key, vec![(account_key, account.clone())]);
                 }
                 output_account(pubkey, &account, Some(slot), false, data_encoding);
             }
