@@ -59,9 +59,11 @@ fn main() {
     */
 }
 
+struct AccountSet(Vec<String>);
+
 /// create a component that renders the top-level UI layout
 fn App(cx: Scope) -> Element {
-    //use_shared_state_provider(cx, || PreviewState::Unset);
+    use_shared_state_provider(cx, || AccountSet(vec![]));
     //let tui_ctx: TuiContext = cx.consume_context().unwrap();
 
     cx.render(rsx! {
@@ -86,7 +88,7 @@ fn App(cx: Scope) -> Element {
                 display: "flex",
                 flex_direction: "column",
                 width: "100%",
-                background: "red",
+                background: "#ffffdd",
                 AccountItem {}
             }
         }
@@ -95,26 +97,36 @@ fn App(cx: Scope) -> Element {
 
 fn Accounts(cx: Scope) -> Element {
     let accounts = get_accounts();
-
     render! {
         div {
             for account in accounts.keys() {
-                AccountListing { account: account.clone() }
+                AccountListing { account: account.clone(), owned: accounts.get(account).unwrap().clone() }
             }
         }
     }
 }
 
 fn AccountItem(cx: Scope) -> Element {
-    render! { "account" }
+    let account_set = &use_shared_state::<AccountSet>(cx).unwrap().read().0;
+    render! {
+        div {
+            for account in account_set {
+                AccountListing { account: account.clone(), owned: vec![] }
+            }
+        }
+    }
 }
 
 #[inline_props]
-fn AccountListing(cx: Scope, account: String) -> Element {
+fn AccountListing(cx: Scope, account: String, owned: Vec<String>) -> Element {
+    let account_set = use_shared_state::<AccountSet>(cx).unwrap();
     cx.render(rsx! {
         div {
             position: "relative",
             font_family: "Courier",
+            onmouseenter: move |_event| {
+                    account_set.write().0 = owned.clone();
+            },
             "{account}"
         }
     })
