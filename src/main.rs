@@ -136,8 +136,9 @@ fn RootAccountListing(cx: Scope, account: String, owned: Vec<(String, AccountSha
         div {
             position: "relative",
             font_family: "Courier",
-            onmouseenter: move |_event| {
-                    account_set.write().owned = owned.clone();
+            onclick: move |_event| {
+                account_set.write().owned = owned.clone();
+                account_set.write().view = None;
             },
             "{account}"
         }
@@ -151,7 +152,7 @@ fn AccountListing(cx: Scope, account: String) -> Element {
         div {
             position: "relative",
             font_family: "Courier",
-            onmouseenter: move |_event| {
+            onclick: move |_event| {
                     account_set.write().view = Some(account.clone());
             },
             "{account}"
