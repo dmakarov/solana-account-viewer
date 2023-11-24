@@ -166,6 +166,7 @@ fn AccountView(cx: Scope) -> Element {
         let owned = &account_set.read().owned;
         if let Some(viewed) = owned.iter().find(|p| p.0 == *view) {
             let balance = viewed.1.lamports();
+            let owned = viewed.1.owner();
             let exec = viewed.1.executable();
             let epoch = viewed.1.rent_epoch();
             let data = viewed.1.data();
@@ -174,6 +175,13 @@ fn AccountView(cx: Scope) -> Element {
                 div {
                     display: "flex",
                     flex_direction: "column",
+                    font_family: "Courier",
+                    div {
+                        "{*view}"
+                    },
+                    div {
+                        "owned by {owned}"
+                    },
                     div {
                         "balance: {balance}"
                     },
