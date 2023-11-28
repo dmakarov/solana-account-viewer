@@ -10,6 +10,12 @@ to the path of the ledger
 cargo r -- -l path/to//test-ledger --include-sysvars
 ```
 
+To build on Linux the following dependencies need to be installed
+
+```
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
+```
+
 The GUI window is divided in 3 panels. The left panel displays pubkeys
 of accounts that own other accounts.  When an owner is selected the
 right panel displays the list of accounts owned by the account
