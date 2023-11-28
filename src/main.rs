@@ -52,13 +52,16 @@ fn main() {
 
 struct AccountSet{
     pub accounts: BTreeMap<String, AccountSharedData>,
-    pub owned: Vec<String>,
+    pub owners: BTreeMap<String, Vec<String>>,
+    pub owner: Option<String>,
     pub view: Option<String>,
 }
 
 /// create a component that renders the top-level UI layout
 fn App(cx: Scope) -> Element {
-    use_shared_state_provider(cx, || AccountSet{accounts: get_accounts(), owned: vec![], view: None});
+    let accounts = get_accounts();
+    let owners = get_owners(&accounts);
+    use_shared_state_provider(cx, || AccountSet{accounts, owners, owner: None, view: None});
     //let tui_ctx: TuiContext = cx.consume_context().unwrap();
 
     cx.render(rsx! {
@@ -86,13 +89,14 @@ fn App(cx: Scope) -> Element {
                 div {
                     display: "flex",
                     flex_direction: "column",
+                    padding: "10px",
                     width: "100%",
-                    background: "#ffffdd",
                     Owned {}
                 }
             },
             div {
                 height: "20%",
+                padding: "10px",
                 AccountView {}
             }
         }
@@ -100,37 +104,54 @@ fn App(cx: Scope) -> Element {
 }
 
 fn Owners(cx: Scope) -> Element {
-    let accounts = &use_shared_state::<AccountSet>(cx).unwrap().read().accounts;
-    let owners = get_owners(accounts);
+    let owners = &use_shared_state::<AccountSet>(cx).unwrap().read().owners;
     render! {
         div {
+            justify_content: "center",
+            padding: "10px",
+            "Account Owners"
+        }
+        div {
             for account in owners.keys() {
-                RootAccountListing { account: account.clone(), owned: owners.get(account).unwrap().clone() }
+                OwnerItem { account: account.clone() }
             }
         }
     }
 }
 
 fn Owned(cx: Scope) -> Element {
-    let owned = &use_shared_state::<AccountSet>(cx).unwrap().read().owned;
-    render! {
-        div {
-            for account in owned {
-                AccountListing { account: account.clone() }
+    let account_set = &use_shared_state::<AccountSet>(cx).unwrap();
+    if let Some(owner) = &account_set.read().owner {
+        let owned = account_set.read().owners.get(owner).unwrap().clone();
+        render! {
+            div {
+                justify_content: "center",
+                padding: "10px",
+                "Accounts Owned by {owner}"
+            }
+            div {
+                for account in owned {
+                    AccountItem { account: account.clone() }
+                }
             }
         }
+    } else {
+        render! {""}
     }
 }
 
 #[inline_props]
-fn RootAccountListing(cx: Scope, account: String, owned: Vec<String>) -> Element {
+fn OwnerItem(cx: Scope, account: String) -> Element {
     let account_set = use_shared_state::<AccountSet>(cx).unwrap();
+    let owner = account_set.read().owner.clone().unwrap_or_default();
+    let bg = if *account == owner { "#aaffaa" } else { "#ffffff" };
     cx.render(rsx! {
         div {
+            background: bg,
             position: "relative",
             font_family: "Courier",
             onclick: move |_event| {
-                account_set.write().owned = owned.clone();
+                account_set.write().owner = Some(account.clone());
                 account_set.write().view = Some(account.clone());
             },
             "{account}"
@@ -139,10 +160,13 @@ fn RootAccountListing(cx: Scope, account: String, owned: Vec<String>) -> Element
 }
 
 #[inline_props]
-fn AccountListing(cx: Scope, account: String) -> Element {
+fn AccountItem(cx: Scope, account: String) -> Element {
     let account_set = use_shared_state::<AccountSet>(cx).unwrap();
+    let view = account_set.read().view.clone().unwrap_or_default();
+    let bg = if *account == view { "#aaffaa" } else { "#ffffdd" };
     cx.render(rsx! {
         div {
+            background: bg,
             position: "relative",
             font_family: "Courier",
             onclick: move |_event| {
@@ -168,26 +192,33 @@ fn AccountView(cx: Scope) -> Element {
                 div {
                     display: "flex",
                     flex_direction: "column",
-                    font_family: "Courier",
                     div {
-                        "{*view}"
+                        justify_content: "center",
+                        padding: "10px",
+                        "Information for Account {*view}"
                     },
                     div {
+                        font_family: "Courier",
                         "owned by {owned}"
                     },
                     div {
+                        font_family: "Courier",
                         "balance: {balance}"
                     },
                     div {
+                        font_family: "Courier",
                         "executable: {exec}"
                     },
                     div {
+                        font_family: "Courier",
                         "rent_epoch: {epoch}"
                     },
                     div {
+                        font_family: "Courier",
                         "data length: {len}"
                     },
                     div {
+                        font_family: "Courier",
                         "data: {data:?}"
                     }
                 }
