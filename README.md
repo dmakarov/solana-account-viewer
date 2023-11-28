@@ -7,7 +7,7 @@ solana-test-ledger application, then point the solana-account-viewer
 to the path of the ledger
 
 ```
-cargo r -- -l path/to//test-ledger --include-sysvars
+cargo r -- -l path/to/test-ledger --include-sysvars
 ```
 
 To build on Linux the following dependencies need to be installed
