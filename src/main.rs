@@ -83,12 +83,14 @@ fn App(cx: Scope) -> Element {
                 div {
                     display: "flex",
                     flex_direction: "column",
+                    background: "#ddffff",
                     padding: "10px",
                     Owners {}
                 },
                 div {
                     display: "flex",
                     flex_direction: "column",
+                    background: "#ffffdd",
                     padding: "10px",
                     width: "100%",
                     Owned {}
@@ -112,6 +114,7 @@ fn Owners(cx: Scope) -> Element {
             "Account Owners"
         }
         div {
+            font_family: "Courier",
             for account in owners.keys() {
                 OwnerItem { account: account.clone() }
             }
@@ -130,6 +133,7 @@ fn Owned(cx: Scope) -> Element {
                 "Accounts Owned by {owner}"
             }
             div {
+                font_family: "Courier",
                 for account in owned {
                     AccountItem { account: account.clone() }
                 }
@@ -144,12 +148,11 @@ fn Owned(cx: Scope) -> Element {
 fn OwnerItem(cx: Scope, account: String) -> Element {
     let account_set = use_shared_state::<AccountSet>(cx).unwrap();
     let owner = account_set.read().owner.clone().unwrap_or_default();
-    let bg = if *account == owner { "#aaffaa" } else { "#ffffff" };
+    let bg = if *account == owner { "#aaffaa" } else { "#ddffff" };
     cx.render(rsx! {
         div {
             background: bg,
             position: "relative",
-            font_family: "Courier",
             onclick: move |_event| {
                 account_set.write().owner = Some(account.clone());
                 account_set.write().view = Some(account.clone());
@@ -168,7 +171,6 @@ fn AccountItem(cx: Scope, account: String) -> Element {
         div {
             background: bg,
             position: "relative",
-            font_family: "Courier",
             onclick: move |_event| {
                     account_set.write().view = Some(account.clone());
             },
@@ -190,35 +192,30 @@ fn AccountView(cx: Scope) -> Element {
             let len = data.len();
             render! {
                 div {
+                    justify_content: "center",
+                    padding: "10px",
+                    "Information for Account {*view}"
+                },
+                div {
                     display: "flex",
                     flex_direction: "column",
+                    font_family: "Courier",
                     div {
-                        justify_content: "center",
-                        padding: "10px",
-                        "Information for Account {*view}"
-                    },
-                    div {
-                        font_family: "Courier",
                         "owned by {owned}"
                     },
                     div {
-                        font_family: "Courier",
                         "balance: {balance}"
                     },
                     div {
-                        font_family: "Courier",
                         "executable: {exec}"
                     },
                     div {
-                        font_family: "Courier",
                         "rent_epoch: {epoch}"
                     },
                     div {
-                        font_family: "Courier",
                         "data length: {len}"
                     },
                     div {
-                        font_family: "Courier",
                         "data: {data:?}"
                     }
                 }
