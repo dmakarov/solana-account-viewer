@@ -7,31 +7,22 @@ use {
     dioxus::{events::{KeyCode, KeyboardEvent}, prelude::*},
     //dioxus_tui::TuiContext,
     log::*,
-    //serde::{Deserialize, Serialize},
     solana_account_decoder::{UiAccount, UiAccountData, UiAccountEncoding},
     solana_accounts_db::{
-        accounts::Accounts,
-        accounts_db::{AccountsDb, AccountsDbConfig, FillerAccountsConfig},
-        hardened_unpack::{open_genesis_config, MAX_GENESIS_ARCHIVE_UNPACKED_SIZE},
-        accounts_index::{AccountsIndexConfig, IndexLimitMb},
-        partitioned_rewards::TestPartitionedEpochRewards,
+        accounts::Accounts, accounts_db::{AccountsDb, AccountsDbConfig, FillerAccountsConfig}, accounts_index::{AccountsIndexConfig, IndexLimitMb},
+        hardened_unpack::{open_genesis_config, MAX_GENESIS_ARCHIVE_UNPACKED_SIZE}, partitioned_rewards::TestPartitionedEpochRewards,
     },
     solana_clap_utils::{hidden_unless_forced, input_validators::{is_parsable, is_pow2, is_slot}},
     solana_core::{accounts_hash_verifier::AccountsHashVerifier, validator::BlockVerificationMethod},
     solana_gossip::{cluster_info::ClusterInfo, contact_info::ContactInfo},
     solana_ledger::{
-        blockstore::{Blockstore, BlockstoreError},
+        bank_forks_utils, blockstore::{Blockstore, BlockstoreError},
         blockstore_options::{AccessType, BlockstoreOptions, BlockstoreRecoveryMode, LedgerColumnOptions, ShredStorageType},
-        blockstore_processor::{self, BlockstoreProcessorError, ProcessOptions},
-        use_snapshot_archives_at_startup::{self, UseSnapshotArchivesAtStartup},
-        bank_forks_utils,
+        blockstore_processor::{self, BlockstoreProcessorError, ProcessOptions}, use_snapshot_archives_at_startup::{self, UseSnapshotArchivesAtStartup},
     },
     solana_runtime::{
         accounts_background_service::{AbsRequestHandlers, AbsRequestSender, AccountsBackgroundService, PrunedBanksRequestHandler, SnapshotRequestHandler},
-        bank::TotalAccountsStats,
-        bank_forks::BankForks,
-        snapshot_config::SnapshotConfig,
-        snapshot_hash::StartingSnapshotHashes,
+        bank::TotalAccountsStats, bank_forks::BankForks, snapshot_config::SnapshotConfig, snapshot_hash::StartingSnapshotHashes,
         snapshot_utils::{self, clean_orphaned_account_snapshot_dirs, create_all_accounts_run_and_snapshot_dirs, move_and_async_delete_path_contents},
     },
     solana_sdk::{
@@ -39,7 +30,7 @@ use {
         clock::Slot, genesis_config::GenesisConfig, native_token::lamports_to_sol, pubkey::Pubkey, signature::Signer, signer::keypair::Keypair, timing::timestamp,
     },
     solana_streamer::socket::SocketAddrSpace,
-    std::{collections::{BTreeMap, BTreeSet}, fs, path::{Path, PathBuf}, process::exit, sync::{atomic::{AtomicBool, Ordering}, Arc, RwLock}},
+    std::{collections::BTreeMap, fs, path::{Path, PathBuf}, process::exit, sync::{atomic::{AtomicBool, Ordering}, Arc, RwLock}},
 };
 
 const LEDGER_TOOL_DIRECTORY: &str = "ledger_tool";
@@ -60,13 +51,14 @@ fn main() {
 }
 
 struct AccountSet{
-    pub owned: Vec<(String, AccountSharedData)>,
+    pub accounts: BTreeMap<String, AccountSharedData>,
+    pub owned: Vec<String>,
     pub view: Option<String>,
 }
 
 /// create a component that renders the top-level UI layout
 fn App(cx: Scope) -> Element {
-    use_shared_state_provider(cx, || AccountSet{owned: vec![], view: None});
+    use_shared_state_provider(cx, || AccountSet{accounts: get_accounts(), owned: vec![], view: None});
     //let tui_ctx: TuiContext = cx.consume_context().unwrap();
 
     cx.render(rsx! {
@@ -89,14 +81,14 @@ fn App(cx: Scope) -> Element {
                     display: "flex",
                     flex_direction: "column",
                     padding: "10px",
-                    Accounts {}
+                    Owners {}
                 },
                 div {
                     display: "flex",
                     flex_direction: "column",
                     width: "100%",
                     background: "#ffffdd",
-                    AccountItem {}
+                    Owned {}
                 }
             },
             div {
@@ -107,30 +99,31 @@ fn App(cx: Scope) -> Element {
     })
 }
 
-fn Accounts(cx: Scope) -> Element {
-    let accounts = get_accounts();
+fn Owners(cx: Scope) -> Element {
+    let accounts = &use_shared_state::<AccountSet>(cx).unwrap().read().accounts;
+    let owners = get_owners(accounts);
     render! {
         div {
-            for account in accounts.keys() {
-                RootAccountListing { account: account.clone(), owned: accounts.get(account).unwrap().clone() }
+            for account in owners.keys() {
+                RootAccountListing { account: account.clone(), owned: owners.get(account).unwrap().clone() }
             }
         }
     }
 }
 
-fn AccountItem(cx: Scope) -> Element {
-    let account_set = &use_shared_state::<AccountSet>(cx).unwrap().read().owned;
+fn Owned(cx: Scope) -> Element {
+    let owned = &use_shared_state::<AccountSet>(cx).unwrap().read().owned;
     render! {
         div {
-            for account in account_set {
-                AccountListing { account: account.0.clone() }
+            for account in owned {
+                AccountListing { account: account.clone() }
             }
         }
     }
 }
 
 #[inline_props]
-fn RootAccountListing(cx: Scope, account: String, owned: Vec<(String, AccountSharedData)>) -> Element {
+fn RootAccountListing(cx: Scope, account: String, owned: Vec<String>) -> Element {
     let account_set = use_shared_state::<AccountSet>(cx).unwrap();
     cx.render(rsx! {
         div {
@@ -138,7 +131,7 @@ fn RootAccountListing(cx: Scope, account: String, owned: Vec<(String, AccountSha
             font_family: "Courier",
             onclick: move |_event| {
                 account_set.write().owned = owned.clone();
-                account_set.write().view = None;
+                account_set.write().view = Some(account.clone());
             },
             "{account}"
         }
@@ -162,14 +155,14 @@ fn AccountListing(cx: Scope, account: String) -> Element {
 
 fn AccountView(cx: Scope) -> Element {
     let account_set = use_shared_state::<AccountSet>(cx).unwrap();
+    let accounts = &account_set.read().accounts;
     if let Some(view) = &account_set.read().view {
-        let owned = &account_set.read().owned;
-        if let Some(viewed) = owned.iter().find(|p| p.0 == *view) {
-            let balance = viewed.1.lamports();
-            let owned = viewed.1.owner();
-            let exec = viewed.1.executable();
-            let epoch = viewed.1.rent_epoch();
-            let data = viewed.1.data();
+        if let Some(viewed) = accounts.get(view) {
+            let balance = viewed.lamports();
+            let owned = viewed.owner();
+            let exec = viewed.executable();
+            let epoch = viewed.rent_epoch();
+            let data = viewed.data();
             let len = data.len();
             render! {
                 div {
@@ -207,7 +200,7 @@ fn AccountView(cx: Scope) -> Element {
     }
 }
 
-fn get_accounts() -> BTreeMap<String, Vec<(String, AccountSharedData)>> {
+fn get_accounts() -> BTreeMap<String, AccountSharedData> {
     solana_logger::setup_with_default("solana=info");
 
     let matches = clap::App::new(crate_name!())
@@ -427,28 +420,33 @@ fn get_accounts() -> BTreeMap<String, Vec<(String, AccountSharedData)>> {
         Some("base64+zstd") => UiAccountEncoding::Base64Zstd,
         _ => UiAccountEncoding::Base64,
     };
-    let mut owners: BTreeMap<String, Vec<(String, AccountSharedData)>> = BTreeMap::new();
-    let mut account_set: BTreeSet<String> = BTreeSet::new();
+    let mut accounts: BTreeMap<String, AccountSharedData> = BTreeMap::new();
     let scan_func = |some_account_tuple: Option<(&Pubkey, AccountSharedData, Slot)>| {
         if let Some((pubkey, account, slot)) = some_account_tuple
             .filter(|(_, account, _)| Accounts::is_loadable(account.lamports()))
         {
             if include_sysvars || !solana_sdk::sysvar::is_sysvar_id(pubkey) {
                 total_accounts_stats.accumulate_account(pubkey, &account, rent_collector);
-                let key = account.owner().to_string();
-                let account_key = pubkey.to_string();
-                account_set.insert(account_key.clone());
-                if let Some(accounts) = owners.get_mut(&key) {
-                    accounts.push((account_key, account.clone()));
-                } else {
-                    owners.insert(key, vec![(account_key, account.clone())]);
-                }
                 output_account(pubkey, &account, Some(slot), false, data_encoding);
+                accounts.insert(pubkey.to_string(), account.clone());
             }
         }
     };
     bank.scan_all_accounts(scan_func).unwrap();
     println!("\n{total_accounts_stats:#?}");
+    accounts
+}
+
+fn get_owners(accounts: &BTreeMap<String, AccountSharedData>) -> BTreeMap<String, Vec<String>> {
+    let mut owners: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (k, v) in accounts {
+        let owner = v.owner().to_string();
+        if let Some(owned) = owners.get_mut(&owner) {
+            owned.push(k.clone());
+        } else {
+            owners.insert(owner, vec![k.clone()]);
+        }
+    }
     println!("Total owners {}", owners.keys().len());
     owners // .into_iter().filter(|(k, _)| !account_set.contains(k)).collect()
 }
