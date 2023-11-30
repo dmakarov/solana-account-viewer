@@ -3,7 +3,7 @@ GUI for browsing Solana ledger accounts
 
 This application displays Solana ledger accounts. To run the program
 have a ledger stored locally, for example, from running
-solana-test-ledger application, then point the solana-account-viewer
+solana-test-validator application, then point the solana-account-viewer
 to the path of the ledger
 
 ```
